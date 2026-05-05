@@ -15,3 +15,24 @@ pub struct Robot {
 
   pub target: Option<Position>,
 }
+
+pub enum RessouceKind {
+    Energy,
+    Crystal
+}
+
+pub struct Ressource {
+  pub kind: RessouceKind,
+  pub quantity: u32,
+}
+
+pub struct Tile {
+  pub obstacle: bool,
+  pub ressource: Option<Ressource>,
+}
+
+pub struct Base {
+  pub position: Position,
+  pub stored_energy: u32,
+  pub stored_crystals: u32,
+}
