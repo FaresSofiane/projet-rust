@@ -8,34 +8,37 @@
 - [x] Génération ressources (E / C)
 - [x] Placement de la base (#)
 - [x] Affichage console de la map
+- [x] Renommage `Ressource`/`RessouceKind` → `Resource`/`ResourceKind`
+- [x] Dérives `Clone`/`Debug`/`Copy`/`PartialEq` sur les structs
+- [x] Champ `carrying: Option<ResourceKind>` ajouté sur `Robot`
 
 ---
 
-## 🧱 Phase 1 — Simulation simple (sans Ratatui)
+## 🧱 Phase 1 — Simulation simple (sans Ratatui) ✅
 
 ### 🤖 Robots (PRIORITÉ)
-- [ ] Créer une liste de robots (Vec<Robot>)
-- [ ] Spawn robots à la base
-- [ ] Afficher robots (x scout, o collector)
+- [x] Créer une liste de robots (Vec<Robot>)
+- [x] Spawn robots à la base
+- [x] Afficher robots (x scout, o collector)
 
 ### 🧠 Comportement Scout
-- [ ] Déplacement aléatoire
-- [ ] Éviter obstacles
-- [ ] Découvrir ressources
-- [ ] Mémoriser ressources trouvées
+- [x] Déplacement aléatoire
+- [x] Éviter obstacles
+- [x] Découvrir ressources
+- [x] Mémoriser ressources trouvées (liste partagée — sera remplacée par channels en Phase 2)
 
 ### 📦 Comportement Collector
-- [ ] Aller vers ressource connue
-- [ ] Collecter 1 unité à la fois
-- [ ] Stocker temporairement (carrying)
-- [ ] Retourner à la base
-- [ ] Décharger ressources
+- [x] Aller vers ressource connue
+- [x] Collecter 1 unité à la fois
+- [x] Stocker temporairement (carrying)
+- [x] Retourner à la base
+- [x] Décharger ressources
 
 ### 🔄 Boucle de simulation
-- [ ] Boucle principale (loop)
-- [ ] Mise à jour des robots à chaque tick
-- [ ] Rafraîchir affichage
-- [ ] Ajouter délai (sleep)
+- [x] Boucle principale (loop)
+- [x] Mise à jour des robots à chaque tick
+- [x] Rafraîchir affichage (clear screen ANSI)
+- [x] Ajouter délai (sleep 150ms)
 
 ---
 
