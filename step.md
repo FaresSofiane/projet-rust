@@ -68,19 +68,19 @@
 
 ### 🧭 Pathfinding
 
-- [ ] Remplacer random par déplacement intelligent
-- [ ] BFS ou A\* (optionnel mais propre)
+- [x] Remplacer random par déplacement intelligent
+- [x] BFS ou A\* (optionnel mais propre)
 
 ### 🪨 Perlin Noise
 
-- [ ] Remplacer obstacles random par Perlin noise
-- [ ] Génération plus naturelle
+- [x] Remplacer obstacles random par Perlin noise
+- [x] Génération plus naturelle
 
 ### 🧱 Robustesse
 
-- [ ] Éviter collisions robots
-- [ ] Gérer ressources épuisées
-- [ ] Empêcher blocage total
+- [x] Éviter collisions robots
+- [x] Gérer ressources épuisées
+- [x] Empêcher blocage total
 
 ---
 

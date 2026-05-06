@@ -19,7 +19,8 @@ const EVENT_LOG_LINES: usize = 6;
 
 fn main() {
     let mut map = Map::new(MAP_WIDTH, MAP_HEIGHT);
-    map.generate_random_obstacles(0.18);
+    // On utilise Perlin noise avec un seuil pour la densité et un scale pour la taille des motifs
+    map.generate_perlin_obstacles(0.2, 0.15);
     map.generate_random_resources(0.10);
 
     let base_position = Position {
@@ -76,21 +77,31 @@ fn main() {
     for tick in 1..=MAX_TICKS {
         // Traiter la boîte après chaque robot : les collecteurs plus loin dans la
         // boucle voient les découvertes des scouts du même tick.
-        for robot in &mut robots {
+        let mut occupied: HashSet<Position> = robots.iter().map(|r| r.position).collect();
+
+        for i in 0..robots.len() {
+            let mut robot = robots[i].clone();
+            occupied.remove(&robot.position);
+
             match robot.robot_type {
                 RobotType::Scout => {
-                    scout_step(robot, &map, &mut mailbox);
+                    scout_step(&mut robot, &map, &mut mailbox, &occupied);
                 }
                 RobotType::Collector => {
                     collector_step(
-                        robot,
+                        &mut robot,
                         &mut map,
                         &mut base,
                         &mut mailbox,
                         &mut events,
+                        &occupied,
                     );
                 }
             }
+
+            occupied.insert(robot.position);
+            robots[i] = robot;
+
             for line in base.process_incoming(&mut mailbox) {
                 log_event(&mut events, line);
             }
@@ -112,8 +123,9 @@ fn scout_step(
     robot: &mut Robot,
     map: &Map,
     mailbox: &mut Vec<Message>,
+    occupied: &HashSet<Position>,
 ) {
-    random_walk(&mut robot.position, map);
+    random_walk(&mut robot.position, map, occupied);
     discover_around(robot, map, mailbox);
 }
 
@@ -123,6 +135,7 @@ fn collector_step(
     base: &mut Base,
     mailbox: &mut Vec<Message>,
     events: &mut Vec<String>,
+    occupied: &HashSet<Position>,
 ) {
     if let Some(kind) = robot.carrying {
         if robot.position == base.position {
@@ -141,7 +154,7 @@ fn collector_step(
             robot.carrying = None;
             return;
         }
-        step_toward(&mut robot.position, &base.position, map);
+        step_toward(&mut robot.position, &base.position, map, occupied);
         return;
     }
 
@@ -212,12 +225,18 @@ fn collector_step(
     }
 
     match robot.target {
-        Some(target) => step_toward(&mut robot.position, &target, map),
-        None => random_walk(&mut robot.position, map),
+        Some(target) => {
+            let moved = step_toward(&mut robot.position, &target, map, occupied);
+            if !moved && robot.position != target {
+                // Pour éviter un blocage total, on annule la cible si on ne peut pas l'atteindre
+                robot.target = None;
+            }
+        }
+        None => random_walk(&mut robot.position, map, occupied),
     }
 }
 
-fn random_walk(pos: &mut Position, map: &Map) {
+fn random_walk(pos: &mut Position, map: &Map, occupied: &HashSet<Position>) {
     let mut rng = rand::rng();
     let dirs: [(i32, i32); 4] = [(0, -1), (0, 1), (-1, 0), (1, 0)];
     let start = rng.random_range(0..4);
@@ -228,44 +247,69 @@ fn random_walk(pos: &mut Position, map: &Map) {
             x: pos.x + dx,
             y: pos.y + dy,
         };
-        if map.is_walkable(&next) {
+        if map.is_walkable(&next) && !occupied.contains(&next) {
             *pos = next;
             return;
         }
     }
 }
 
-fn step_toward(pos: &mut Position, target: &Position, map: &Map) {
-    let dx = (target.x - pos.x).signum();
-    let dy = (target.y - pos.y).signum();
+fn bfs_next_step(start: &Position, target: &Position, map: &Map, occupied: &HashSet<Position>) -> Option<Position> {
+    use std::collections::{HashMap, HashSet, VecDeque};
 
-    let candidates = [
-        Position {
-            x: pos.x + dx,
-            y: pos.y,
-        },
-        Position {
-            x: pos.x,
-            y: pos.y + dy,
-        },
-        Position {
-            x: pos.x - dx,
-            y: pos.y,
-        },
-        Position {
-            x: pos.x,
-            y: pos.y - dy,
-        },
-    ];
+    let mut queue = VecDeque::new();
+    let mut visited = HashSet::new();
+    let mut parent = HashMap::new();
 
-    for cand in candidates.iter() {
-        if cand == pos {
-            continue;
+    queue.push_back(*start);
+    visited.insert(*start);
+
+    while let Some(current) = queue.pop_front() {
+        if current == *target {
+            break;
         }
-        if map.is_walkable(cand) {
-            *pos = *cand;
-            return;
+
+        let dirs: [(i32, i32); 4] = [(0, -1), (0, 1), (-1, 0), (1, 0)];
+        for (dx, dy) in dirs {
+            let next = Position {
+                x: current.x + dx,
+                y: current.y + dy,
+            };
+            let is_walkable = map.is_walkable(&next);
+            let is_free = !occupied.contains(&next) || next == *target;
+            if is_walkable && is_free && !visited.contains(&next) {
+                visited.insert(next);
+                parent.insert(next, current);
+                queue.push_back(next);
+            }
         }
+    }
+
+    if !parent.contains_key(target) {
+        return None;
+    }
+
+    let mut curr = *target;
+    while let Some(&p) = parent.get(&curr) {
+        if p == *start {
+            if occupied.contains(&curr) {
+                return None;
+            }
+            return Some(curr);
+        }
+        curr = p;
+    }
+    None
+}
+
+fn step_toward(pos: &mut Position, target: &Position, map: &Map, occupied: &HashSet<Position>) -> bool {
+    if let Some(next) = bfs_next_step(pos, target, map, occupied) {
+        *pos = next;
+        true
+    } else {
+        // Fallback to random walk if no path is found
+        random_walk(pos, map, occupied);
+        false
     }
 }
 
