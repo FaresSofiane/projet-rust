@@ -19,7 +19,8 @@ const EVENT_LOG_LINES: usize = 6;
 
 fn main() {
     let mut map = Map::new(MAP_WIDTH, MAP_HEIGHT);
-    map.generate_random_obstacles(0.18);
+    // On utilise Perlin noise avec un seuil pour la densité et un scale pour la taille des motifs
+    map.generate_perlin_obstacles(0.2, 0.15);
     map.generate_random_resources(0.10);
 
     let base_position = Position {

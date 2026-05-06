@@ -43,6 +43,26 @@ impl Map {
         }
     }
 
+    pub fn generate_perlin_obstacles(&mut self, threshold: f64, scale: f64) {
+        use noise::{NoiseFn, Perlin, Seedable};
+        let mut rng = rand::rng();
+        let perlin = Perlin::new(rng.random());
+
+        for y in 0..self.height {
+            for x in 0..self.width {
+                let nx = x as f64 * scale;
+                let ny = y as f64 * scale;
+                
+                // Le bruit de Perlin renvoie une valeur entre -1.0 et 1.0 (environ)
+                let value = perlin.get([nx, ny]);
+                
+                if value > threshold {
+                    self.tiles[y][x].obstacle = true;
+                }
+            }
+        }
+    }
+
     pub fn generate_random_resources(&mut self, probability: f64) {
         let mut rng = rand::rng();
 

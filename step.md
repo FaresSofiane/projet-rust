@@ -73,8 +73,8 @@
 
 ### 🪨 Perlin Noise
 
-- [ ] Remplacer obstacles random par Perlin noise
-- [ ] Génération plus naturelle
+- [x] Remplacer obstacles random par Perlin noise
+- [x] Génération plus naturelle
 
 ### 🧱 Robustesse
 
