@@ -68,8 +68,8 @@
 
 ### 🧭 Pathfinding
 
-- [ ] Remplacer random par déplacement intelligent
-- [ ] BFS ou A\* (optionnel mais propre)
+- [x] Remplacer random par déplacement intelligent
+- [x] BFS ou A\* (optionnel mais propre)
 
 ### 🪨 Perlin Noise
 

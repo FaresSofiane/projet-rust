@@ -235,37 +235,55 @@ fn random_walk(pos: &mut Position, map: &Map) {
     }
 }
 
+fn bfs_next_step(start: &Position, target: &Position, map: &Map) -> Option<Position> {
+    use std::collections::{HashMap, HashSet, VecDeque};
+
+    let mut queue = VecDeque::new();
+    let mut visited = HashSet::new();
+    let mut parent = HashMap::new();
+
+    queue.push_back(*start);
+    visited.insert(*start);
+
+    while let Some(current) = queue.pop_front() {
+        if current == *target {
+            break;
+        }
+
+        let dirs: [(i32, i32); 4] = [(0, -1), (0, 1), (-1, 0), (1, 0)];
+        for (dx, dy) in dirs {
+            let next = Position {
+                x: current.x + dx,
+                y: current.y + dy,
+            };
+            if map.is_walkable(&next) && !visited.contains(&next) {
+                visited.insert(next);
+                parent.insert(next, current);
+                queue.push_back(next);
+            }
+        }
+    }
+
+    if !parent.contains_key(target) {
+        return None;
+    }
+
+    let mut curr = *target;
+    while let Some(&p) = parent.get(&curr) {
+        if p == *start {
+            return Some(curr);
+        }
+        curr = p;
+    }
+    None
+}
+
 fn step_toward(pos: &mut Position, target: &Position, map: &Map) {
-    let dx = (target.x - pos.x).signum();
-    let dy = (target.y - pos.y).signum();
-
-    let candidates = [
-        Position {
-            x: pos.x + dx,
-            y: pos.y,
-        },
-        Position {
-            x: pos.x,
-            y: pos.y + dy,
-        },
-        Position {
-            x: pos.x - dx,
-            y: pos.y,
-        },
-        Position {
-            x: pos.x,
-            y: pos.y - dy,
-        },
-    ];
-
-    for cand in candidates.iter() {
-        if cand == pos {
-            continue;
-        }
-        if map.is_walkable(cand) {
-            *pos = *cand;
-            return;
-        }
+    if let Some(next) = bfs_next_step(pos, target, map) {
+        *pos = next;
+    } else {
+        // Fallback to random walk if no path is found
+        random_walk(pos, map);
     }
 }
 
