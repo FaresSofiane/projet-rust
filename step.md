@@ -1,6 +1,7 @@
 # 🚀 Resource Collection Simulation — TODO
 
 ## ✅ Déjà fait
+
 - [x] Structure du projet Rust
 - [x] model.rs (Position, Robot, Resource, Tile, Base)
 - [x] Map avec grille Vec<Vec<Tile>>
@@ -17,17 +18,20 @@
 ## 🧱 Phase 1 — Simulation simple (sans Ratatui) ✅
 
 ### 🤖 Robots (PRIORITÉ)
+
 - [x] Créer une liste de robots (Vec<Robot>)
 - [x] Spawn robots à la base
 - [x] Afficher robots (x scout, o collector)
 
 ### 🧠 Comportement Scout
+
 - [x] Déplacement aléatoire
 - [x] Éviter obstacles
 - [x] Découvrir ressources
 - [x] Mémoriser ressources trouvées (liste partagée — sera remplacée par channels en Phase 2)
 
 ### 📦 Comportement Collector
+
 - [x] Aller vers ressource connue
 - [x] Collecter 1 unité à la fois
 - [x] Stocker temporairement (carrying)
@@ -35,6 +39,7 @@
 - [x] Décharger ressources
 
 ### 🔄 Boucle de simulation
+
 - [x] Boucle principale (loop)
 - [x] Mise à jour des robots à chaque tick
 - [x] Rafraîchir affichage (clear screen ANSI)
@@ -42,32 +47,37 @@
 
 ---
 
-## 🧠 Phase 2 — Intelligence & Communication
+## 🧠 Phase 2 — Intelligence & Communication ✅
 
 ### 📡 Communication
-- [ ] Système de messages (enum Message)
-- [ ] Scouts → envoient ressources découvertes
-- [ ] Collectors → envoient collecte
-- [ ] Base → centralise infos
+
+- [x] Système de messages (enum Message)
+- [x] Scouts → envoient ressources découvertes
+- [x] Collectors → envoient collecte
+- [x] Base → centralise infos
 
 ### 🗺️ Connaissance
-- [ ] Robots ont connaissance locale
-- [ ] Base a connaissance globale
-- [ ] Synchronisation infos
+
+- [x] Robots ont connaissance locale
+- [x] Base a connaissance globale
+- [x] Synchronisation infos
 
 ---
 
 ## ⚙️ Phase 3 — Améliorations techniques
 
 ### 🧭 Pathfinding
+
 - [ ] Remplacer random par déplacement intelligent
-- [ ] BFS ou A* (optionnel mais propre)
+- [ ] BFS ou A\* (optionnel mais propre)
 
 ### 🪨 Perlin Noise
+
 - [ ] Remplacer obstacles random par Perlin noise
 - [ ] Génération plus naturelle
 
 ### 🧱 Robustesse
+
 - [ ] Éviter collisions robots
 - [ ] Gérer ressources épuisées
 - [ ] Empêcher blocage total
@@ -103,6 +113,7 @@
 ## 🧠 Rappel important
 
 > Toujours faire dans cet ordre :
+>
 > 1. Faire marcher
 > 2. Améliorer
 > 3. Optimiser

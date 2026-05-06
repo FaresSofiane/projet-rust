@@ -77,14 +77,7 @@ impl Map {
         self.in_bounds(p) && !self.tiles[p.y as usize][p.x as usize].obstacle
     }
 
-    pub fn print(
-        &self,
-        base: &Base,
-        robots: &[Robot],
-        tick: u32,
-        known_resources: &[Position],
-        events: &[String],
-    ) {
+    pub fn print(&self, base: &Base, robots: &[Robot], tick: u32, events: &[String]) {
         print!("\x1B[H");
 
         for y in 0..self.height {
@@ -132,10 +125,10 @@ impl Map {
             .sum();
 
         println!(
-            "Tick: {} | Robots: {} | Known: {} | Remaining on map: {} units | Base — Energy: {} | Crystals: {}\x1B[K",
+            "Tick: {} | Robots: {} | Known (base): {} | Remaining on map: {} units | Base — Energy: {} | Crystals: {}\x1B[K",
             tick,
             robots.len(),
-            known_resources.len(),
+            base.known_resources.len(),
             total_resources_left,
             base.stored_energy,
             base.stored_crystals

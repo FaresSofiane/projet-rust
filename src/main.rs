@@ -1,6 +1,7 @@
 mod map;
 mod model;
 
+use std::collections::HashSet;
 use std::io::Write;
 use std::{thread, time::Duration};
 
@@ -35,6 +36,8 @@ fn main() {
         position: base_position,
         stored_energy: 0,
         stored_crystals: 0,
+        known_resources: Default::default(),
+        known_obstacles: Default::default(),
     };
 
     let mut robots: Vec<Robot> = Vec::new();
@@ -47,6 +50,8 @@ fn main() {
             robot_type: RobotType::Scout,
             target: None,
             carrying: None,
+            local_resources: HashSet::new(),
+            local_obstacles: HashSet::new(),
         });
     }
     for _ in 0..COLLECTOR_COUNT {
@@ -57,34 +62,41 @@ fn main() {
             robot_type: RobotType::Collector,
             target: None,
             carrying: None,
+            local_resources: HashSet::new(),
+            local_obstacles: HashSet::new(),
         });
     }
 
-    let mut known_resources: Vec<Position> = Vec::new();
+    let mut mailbox: Vec<Message> = Vec::new();
     let mut events: Vec<String> = Vec::new();
 
     print!("\x1B[2J\x1B[H");
     std::io::stdout().flush().ok();
 
     for tick in 1..=MAX_TICKS {
+        // Traiter la boîte après chaque robot : les collecteurs plus loin dans la
+        // boucle voient les découvertes des scouts du même tick.
         for robot in &mut robots {
             match robot.robot_type {
                 RobotType::Scout => {
-                    scout_step(robot, &map, &mut known_resources, &mut events);
+                    scout_step(robot, &map, &mut mailbox);
                 }
                 RobotType::Collector => {
                     collector_step(
                         robot,
                         &mut map,
                         &mut base,
-                        &mut known_resources,
+                        &mut mailbox,
                         &mut events,
                     );
                 }
             }
+            for line in base.process_incoming(&mut mailbox) {
+                log_event(&mut events, line);
+            }
         }
 
-        map.print(&base, &robots, tick, &known_resources, &events);
+        map.print(&base, &robots, tick, &events);
         thread::sleep(Duration::from_millis(TICK_MS));
     }
 }
@@ -99,18 +111,17 @@ fn log_event(events: &mut Vec<String>, msg: String) {
 fn scout_step(
     robot: &mut Robot,
     map: &Map,
-    known_resources: &mut Vec<Position>,
-    events: &mut Vec<String>,
+    mailbox: &mut Vec<Message>,
 ) {
     random_walk(&mut robot.position, map);
-    discover_around(&robot.position, map, known_resources, events);
+    discover_around(robot, map, mailbox);
 }
 
 fn collector_step(
     robot: &mut Robot,
     map: &mut Map,
     base: &mut Base,
-    known_resources: &mut Vec<Position>,
+    mailbox: &mut Vec<Message>,
     events: &mut Vec<String>,
 ) {
     if let Some(kind) = robot.carrying {
@@ -135,21 +146,26 @@ fn collector_step(
     }
 
     if let Some(target) = robot.target
-        && !known_resources.contains(&target)
+        && !base.known_resources.contains_key(&target)
     {
         robot.target = None;
     }
 
-    if known_resources.contains(&robot.position) {
+    if base.known_resources.contains_key(&robot.position) {
         let pos = robot.position;
         let tile = &mut map.tiles[pos.y as usize][pos.x as usize];
         if let Some(res) = tile.resource.as_mut() {
             res.quantity -= 1;
             let kind = res.kind;
             let qty = res.quantity;
+            mailbox.push(Message::ResourcePicked {
+                robot_id: robot.id,
+                position: pos,
+                kind,
+                remaining: qty,
+            });
             if qty == 0 {
                 tile.resource = None;
-                known_resources.retain(|p| *p != pos);
                 log_event(
                     events,
                     format!("[depleted] {:?} at ({},{}) — REMOVED", kind, pos.x, pos.y),
@@ -166,14 +182,30 @@ fn collector_step(
             robot.carrying = Some(kind);
             robot.target = None;
             return;
-        } else {
-            known_resources.retain(|p| *p != pos);
+        } else if let Some(&kind) = base.known_resources.get(&pos) {
+            mailbox.push(Message::ResourcePicked {
+                robot_id: robot.id,
+                position: pos,
+                kind,
+                remaining: 0,
+            });
+            for line in base.process_incoming(mailbox) {
+                log_event(events, line);
+            }
+            log_event(
+                events,
+                format!(
+                    "[fix] known resource missing on map at ({},{}) — dropped from base",
+                    pos.x, pos.y
+                ),
+            );
         }
     }
 
     if robot.target.is_none()
-        && let Some(closest) = known_resources
-            .iter()
+        && let Some(closest) = base
+            .known_resources
+            .keys()
             .min_by_key(|p| (p.x - robot.position.x).abs() + (p.y - robot.position.y).abs())
     {
         robot.target = Some(*closest);
@@ -237,12 +269,8 @@ fn step_toward(pos: &mut Position, target: &Position, map: &Map) {
     }
 }
 
-fn discover_around(
-    p: &Position,
-    map: &Map,
-    known_resources: &mut Vec<Position>,
-    events: &mut Vec<String>,
-) {
+fn discover_around(robot: &mut Robot, map: &Map, mailbox: &mut Vec<Message>) {
+    let p = robot.position;
     for dy in -1..=1 {
         for dx in -1..=1 {
             let scan = Position {
@@ -253,19 +281,20 @@ fn discover_around(
                 continue;
             }
             let tile = &map.tiles[scan.y as usize][scan.x as usize];
-            if let Some(res) = &tile.resource
-                && !known_resources.contains(&scan)
-            {
-                let kind = res.kind;
-                let qty = res.quantity;
-                known_resources.push(scan);
-                log_event(
-                    events,
-                    format!(
-                        "[scout] discovered {:?} at ({},{}) — {} units",
-                        kind, scan.x, scan.y, qty
-                    ),
-                );
+            if tile.obstacle {
+                if robot.local_obstacles.insert(scan) {
+                    mailbox.push(Message::ObstacleDiscovered { position: scan });
+                }
+            } else if let Some(res) = &tile.resource {
+                if robot.local_resources.insert(scan) {
+                    let kind = res.kind;
+                    let qty = res.quantity;
+                    mailbox.push(Message::ResourceDiscovered {
+                        position: scan,
+                        kind,
+                        quantity: qty,
+                    });
+                }
             }
         }
     }

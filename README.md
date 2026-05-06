@@ -15,6 +15,7 @@ Bienvenue dans ce projet Rust réalisé dans le cadre du cursus à l'EFREI.
 autonomes collectent des ressources sur une carte générée procéduralement.
 
 Deux types de robots :
+
 - **Scouts** (`x`) : explorent la carte et partagent les positions des ressources qu'ils découvrent.
 - **Collecteurs** (`o`) : vont chercher les ressources connues, les ramènent à la base (`#`).
 
@@ -24,8 +25,8 @@ cristaux (`C`). La base centrale stocke les ressources collectées.
 ## État d'avancement
 
 - ✅ **Phase 1** — Simulation simple en console (spawn, scout, collector, boucle)
-- ⏳ **Phase 2** — Communication par channels (à faire)
-- ⏳ **Phase 3** — Pathfinding A*, Perlin noise (à faire)
+- ✅ **Phase 2** — Communication par channels
+- ⏳ **Phase 3** — Pathfinding A\*, Perlin noise (à faire)
 - ⏳ **Phase 4** — UI Ratatui (à faire)
 - ⏳ **Phase 5** — Concurrence (1 robot = 1 thread)
 
