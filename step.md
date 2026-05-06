@@ -78,9 +78,9 @@
 
 ### 🧱 Robustesse
 
-- [ ] Éviter collisions robots
-- [ ] Gérer ressources épuisées
-- [ ] Empêcher blocage total
+- [x] Éviter collisions robots
+- [x] Gérer ressources épuisées
+- [x] Empêcher blocage total
 
 ---
 

@@ -31,20 +31,10 @@ impl Map {
         }
     }
 
-    pub fn generate_random_obstacles(&mut self, probability: f64) {
-        let mut rng = rand::rng();
 
-        for y in 0..self.height {
-            for x in 0..self.width {
-                if rng.random::<f64>() < probability {
-                    self.tiles[y][x].obstacle = true;
-                }
-            }
-        }
-    }
 
     pub fn generate_perlin_obstacles(&mut self, threshold: f64, scale: f64) {
-        use noise::{NoiseFn, Perlin, Seedable};
+        use noise::{NoiseFn, Perlin};
         let mut rng = rand::rng();
         let perlin = Perlin::new(rng.random());
 
