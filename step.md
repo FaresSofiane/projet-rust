@@ -93,11 +93,13 @@
 
 ---
 
-## ⚡ Phase 5 — Concurrence (Rust threads)
+## ⚡ Phase 5 — Concurrence (Rust threads) ✅
 
-- [ ] 1 robot = 1 thread
-- [ ] Channels pour communication
-- [ ] Pas de blocage (async / message passing)
+- [x] 1 robot = 1 thread (`thread::spawn` par robot, `robot_loop`)
+- [x] Channels pour communication (`std::sync::mpsc`, base = consommateur unique)
+- [x] Pas de blocage (verrou `Arc<Mutex<World>>` relâché avant `sleep`, message passing)
+- [x] Arrêt propre (`AtomicBool` + `join` de tous les threads)
+- [x] Tests unitaires (BFS, agrégation base, génération de ressources)
 
 ---
 

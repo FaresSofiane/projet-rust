@@ -40,7 +40,6 @@ impl Map {
                 let nx = x as f64 * scale;
                 let ny = y as f64 * scale;
 
-                // Le bruit de Perlin renvoie une valeur entre -1.0 et 1.0 (environ)
                 let value = perlin.get([nx, ny]);
 
                 if value > threshold {
@@ -82,5 +81,35 @@ impl Map {
 
     pub fn is_walkable(&self, p: &Position) -> bool {
         self.in_bounds(p) && !self.tiles[p.y as usize][p.x as usize].obstacle
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn generated_resources_have_valid_quantity_and_kind() {
+        let mut map = Map::new(8, 6);
+        map.generate_random_resources(1.0);
+
+        let mut placed = 0;
+        for row in &map.tiles {
+            for tile in row {
+                if let Some(res) = &tile.resource {
+                    placed += 1;
+                    assert!(
+                        (50..=200).contains(&res.quantity),
+                        "quantité hors bornes: {}",
+                        res.quantity
+                    );
+                    assert!(matches!(
+                        res.kind,
+                        ResourceKind::Energy | ResourceKind::Crystal
+                    ));
+                }
+            }
+        }
+        assert_eq!(placed, 8 * 6, "toutes les tuiles libres doivent être peuplées");
     }
 }
