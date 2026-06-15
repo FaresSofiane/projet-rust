@@ -4,6 +4,10 @@ mod model;
 use std::collections::HashSet;
 use std::error::Error;
 use std::io::{self, Stdout};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::{self, Sender};
+use std::sync::{Arc, Mutex};
+use std::thread;
 use std::time::Duration;
 
 use crossterm::{
@@ -28,12 +32,19 @@ const MAP_HEIGHT: usize = 20;
 const SCOUT_COUNT: u32 = 3;
 const COLLECTOR_COUNT: u32 = 2;
 const TICK_MS: u64 = 200;
-const MAX_TICKS: u32 = 2000;
+const UI_REFRESH_MS: u64 = 50;
 const EVENT_LOG_LINES: usize = 6;
+
+struct World {
+    map: Map,
+    robots: Vec<Robot>,
+    base: Base,
+    events: Vec<String>,
+    frame: u32,
+}
 
 fn main() -> Result<(), Box<dyn Error>> {
     let mut map = Map::new(MAP_WIDTH, MAP_HEIGHT);
-    // On utilise Perlin noise avec un seuil pour la densité et un scale pour la taille des motifs
     map.generate_perlin_obstacles(0.2, 0.15);
     map.generate_random_resources(0.10);
 
@@ -47,7 +58,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     map.tiles[by][bx].obstacle = false;
     map.tiles[by][bx].resource = None;
 
-    let mut base = Base {
+    let base = Base {
         position: base_position,
         stored_energy: 0,
         stored_crystals: 0,
@@ -82,8 +93,27 @@ fn main() -> Result<(), Box<dyn Error>> {
         });
     }
 
-    let mut mailbox: Vec<Message> = Vec::new();
-    let mut events: Vec<String> = Vec::new();
+    let world = Arc::new(Mutex::new(World {
+        map,
+        robots,
+        base,
+        events: Vec::new(),
+        frame: 0,
+    }));
+
+    let (tx, rx) = mpsc::channel::<Message>();
+    let running = Arc::new(AtomicBool::new(true));
+
+    let robot_count = world.lock().unwrap().robots.len();
+
+    let mut handles = Vec::with_capacity(robot_count);
+    for i in 0..robot_count {
+        let world = Arc::clone(&world);
+        let tx = tx.clone();
+        let running = Arc::clone(&running);
+        handles.push(thread::spawn(move || robot_loop(i, world, tx, running)));
+    }
+    drop(tx);
 
     enable_raw_mode()?;
     let mut stdout = io::stdout();
@@ -91,50 +121,78 @@ fn main() -> Result<(), Box<dyn Error>> {
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    for tick in 1..=MAX_TICKS {
-        // Traiter la boîte après chaque robot : les collecteurs plus loin dans la
-        // boucle voient les découvertes des scouts du même tick.
-        let mut occupied: HashSet<Position> = robots.iter().map(|r| r.position).collect();
-
-        for i in 0..robots.len() {
-            let mut robot = robots[i].clone();
-            occupied.remove(&robot.position);
-
-            match robot.robot_type {
-                RobotType::Scout => {
-                    scout_step(&mut robot, &map, &mut mailbox, &occupied);
-                }
-                RobotType::Collector => {
-                    collector_step(
-                        &mut robot,
-                        &mut map,
-                        &mut base,
-                        &mut mailbox,
-                        &mut events,
-                        &occupied,
-                    );
-                }
-            }
-
-            occupied.insert(robot.position);
-            robots[i] = robot;
-
-            for line in base.process_incoming(&mut mailbox) {
-                log_event(&mut events, line);
-            }
+    while running.load(Ordering::SeqCst) {
+        let mut incoming: Vec<Message> = Vec::new();
+        while let Ok(msg) = rx.try_recv() {
+            incoming.push(msg);
         }
 
-        terminal.draw(|frame| render_ui(frame, &map, &base, &robots, tick, &events))?;
+        {
+            let mut w = world.lock().unwrap();
+            for line in w.base.process_incoming(&mut incoming) {
+                let events = &mut w.events;
+                log_event(events, line);
+            }
+            w.frame += 1;
+            let World {
+                map,
+                base,
+                robots,
+                events,
+                frame,
+            } = &*w;
+            terminal.draw(|frame_ui| {
+                render_ui(frame_ui, map, base, robots, *frame, events)
+            })?;
+        }
 
-        if event::poll(Duration::from_millis(TICK_MS))? {
+        if event::poll(Duration::from_millis(UI_REFRESH_MS))? {
             if matches!(event::read()?, Event::Key(_)) {
+                running.store(false, Ordering::SeqCst);
                 break;
             }
         }
     }
 
+    for handle in handles {
+        let _ = handle.join();
+    }
+
     restore_terminal(&mut terminal)?;
     Ok(())
+}
+
+fn robot_loop(
+    index: usize,
+    world: Arc<Mutex<World>>,
+    tx: Sender<Message>,
+    running: Arc<AtomicBool>,
+) {
+    while running.load(Ordering::SeqCst) {
+        {
+            let mut w = world.lock().unwrap();
+
+            let occupied: HashSet<Position> = w
+                .robots
+                .iter()
+                .enumerate()
+                .filter(|(j, _)| *j != index)
+                .map(|(_, r)| r.position)
+                .collect();
+
+            let World {
+                map, robots, base, ..
+            } = &mut *w;
+            let robot = &mut robots[index];
+
+            match robot.robot_type {
+                RobotType::Scout => scout_step(robot, map, &tx, &occupied),
+                RobotType::Collector => collector_step(robot, map, base, &tx, &occupied),
+            }
+        }
+
+        thread::sleep(Duration::from_millis(TICK_MS));
+    }
 }
 
 fn restore_terminal(
@@ -151,7 +209,7 @@ fn render_ui(
     map: &Map,
     base: &Base,
     robots: &[Robot],
-    tick: u32,
+    frame_count: u32,
     events: &[String],
 ) {
     let area = frame.area();
@@ -185,7 +243,7 @@ fn render_ui(
     let stats = vec![
         Line::from(vec![
             Span::styled(
-                format!("Tick: {}  ", tick),
+                format!("Frame: {}  ", frame_count),
                 Style::default().fg(Color::White),
             ),
             Span::styled(
@@ -327,39 +385,22 @@ fn log_event(events: &mut Vec<String>, msg: String) {
     }
 }
 
-fn scout_step(
-    robot: &mut Robot,
-    map: &Map,
-    mailbox: &mut Vec<Message>,
-    occupied: &HashSet<Position>,
-) {
-    discover_around(robot, map, mailbox);
+fn scout_step(robot: &mut Robot, map: &Map, tx: &Sender<Message>, occupied: &HashSet<Position>) {
+    discover_around(robot, map, tx);
     random_walk(&mut robot.position, map, occupied);
-    discover_around(robot, map, mailbox);
+    discover_around(robot, map, tx);
 }
 
 fn collector_step(
     robot: &mut Robot,
     map: &mut Map,
-    base: &mut Base,
-    mailbox: &mut Vec<Message>,
-    events: &mut Vec<String>,
+    base: &Base,
+    tx: &Sender<Message>,
     occupied: &HashSet<Position>,
 ) {
     if let Some(kind) = robot.carrying {
         if robot.position == base.position {
-            match kind {
-                ResourceKind::Energy => base.stored_energy += 1,
-                ResourceKind::Crystal => base.stored_crystals += 1,
-            }
-            let total = match kind {
-                ResourceKind::Energy => base.stored_energy,
-                ResourceKind::Crystal => base.stored_crystals,
-            };
-            log_event(
-                events,
-                format!("[deposit] {:?} → base (total: {})", kind, total),
-            );
+            let _ = tx.send(Message::ResourceDeposited { kind });
             robot.carrying = None;
             return;
         }
@@ -380,47 +421,28 @@ fn collector_step(
             res.quantity -= 1;
             let kind = res.kind;
             let qty = res.quantity;
-            mailbox.push(Message::ResourcePicked {
+            if qty == 0 {
+                tile.resource = None;
+            }
+            let _ = tx.send(Message::ResourcePicked {
                 robot_id: robot.id,
                 position: pos,
                 kind,
                 remaining: qty,
             });
-            if qty == 0 {
-                tile.resource = None;
-                log_event(
-                    events,
-                    format!("[depleted] {:?} at ({},{}) — REMOVED", kind, pos.x, pos.y),
-                );
-            } else {
-                log_event(
-                    events,
-                    format!(
-                        "[pick] 1 {:?} at ({},{}) — {} left",
-                        kind, pos.x, pos.y, qty
-                    ),
-                );
-            }
             robot.carrying = Some(kind);
             robot.target = None;
             return;
-        } else if let Some(&kind) = base.known_resources.get(&pos) {
-            mailbox.push(Message::ResourcePicked {
-                robot_id: robot.id,
-                position: pos,
-                kind,
-                remaining: 0,
-            });
-            for line in base.process_incoming(mailbox) {
-                log_event(events, line);
+        } else {
+            if let Some(&kind) = base.known_resources.get(&pos) {
+                let _ = tx.send(Message::ResourcePicked {
+                    robot_id: robot.id,
+                    position: pos,
+                    kind,
+                    remaining: 0,
+                });
             }
-            log_event(
-                events,
-                format!(
-                    "[fix] known resource missing on map at ({},{}) — dropped from base",
-                    pos.x, pos.y
-                ),
-            );
+            robot.target = None;
         }
     }
 
@@ -432,7 +454,6 @@ fn collector_step(
         Some(target) => {
             let moved = step_toward(&mut robot.position, &target, map, occupied);
             if !moved && robot.position != target {
-                // Pour éviter un blocage total, on annule la cible si on ne peut pas l'atteindre
                 robot.target = None;
             }
         }
@@ -535,13 +556,12 @@ fn step_toward(
         *pos = next;
         true
     } else {
-        // Fallback to random walk if no path is found
         random_walk(pos, map, occupied);
         false
     }
 }
 
-fn discover_around(robot: &mut Robot, map: &Map, mailbox: &mut Vec<Message>) {
+fn discover_around(robot: &mut Robot, map: &Map, tx: &Sender<Message>) {
     let p = robot.position;
     for dy in -1..=1 {
         for dx in -1..=1 {
@@ -555,13 +575,13 @@ fn discover_around(robot: &mut Robot, map: &Map, mailbox: &mut Vec<Message>) {
             let tile = &map.tiles[scan.y as usize][scan.x as usize];
             if tile.obstacle {
                 if robot.local_obstacles.insert(scan) {
-                    mailbox.push(Message::ObstacleDiscovered { position: scan });
+                    let _ = tx.send(Message::ObstacleDiscovered { position: scan });
                 }
             } else if let Some(res) = &tile.resource {
                 if robot.local_resources.insert(scan) {
                     let kind = res.kind;
                     let qty = res.quantity;
-                    mailbox.push(Message::ResourceDiscovered {
+                    let _ = tx.send(Message::ResourceDiscovered {
                         position: scan,
                         kind,
                         quantity: qty,
@@ -569,5 +589,34 @@ fn discover_around(robot: &mut Robot, map: &Map, mailbox: &mut Vec<Message>) {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bfs_finds_first_step_on_open_map() {
+        let map = Map::new(5, 5);
+        let start = Position { x: 0, y: 0 };
+        let target = Position { x: 2, y: 0 };
+        let occupied = HashSet::new();
+
+        let next = bfs_next_step(&start, &target, &map, &occupied);
+        assert_eq!(next, Some(Position { x: 1, y: 0 }));
+    }
+
+    #[test]
+    fn bfs_returns_none_when_target_is_walled_off() {
+        let mut map = Map::new(5, 5);
+        for y in 0..map.height {
+            map.tiles[y][1].obstacle = true;
+        }
+        let start = Position { x: 0, y: 2 };
+        let target = Position { x: 2, y: 2 };
+        let occupied = HashSet::new();
+
+        assert_eq!(bfs_next_step(&start, &target, &map, &occupied), None);
     }
 }

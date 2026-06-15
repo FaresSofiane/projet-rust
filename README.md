@@ -25,12 +25,22 @@ cristaux (`C`). La base centrale stocke les ressources collectées.
 ## État d'avancement
 
 - ✅ **Phase 1** — Simulation simple en console (spawn, scout, collector, boucle)
-- ✅ **Phase 2** — Communication par channels
-- ✅ **Phase 3** — Pathfinding A\*, Perlin noise
-- ⏳ **Phase 4** — UI Ratatui (à faire)
-- ⏳ **Phase 5** — Concurrence (1 robot = 1 thread)
+- ✅ **Phase 2** — Système de messages (enum `Message`) et connaissance globale de la base
+- ✅ **Phase 3** — Pathfinding BFS, Perlin noise
+- ✅ **Phase 4** — UI Ratatui (couleurs, compteurs, quitter au clavier)
+- ✅ **Phase 5** — Concurrence : 1 robot = 1 thread, communication par canal `mpsc`
 
 Voir `step.md` pour le détail.
+
+### Architecture concurrente (Phase 5)
+
+Chaque robot tourne dans **son propre thread**. L'état du monde (carte + positions)
+est partagé via un `Arc<Mutex<World>>` ; les découvertes et collectes sont transmises
+à la base — le **thread principal**, consommateur unique — par un canal `std::sync::mpsc`.
+La base est ainsi le seul à écrire la connaissance globale (*« share memory by
+communicating »*). Le verrou est relâché avant chaque pause des robots : les opérations
+sont **non-bloquantes**. À l'appui d'une touche, un `AtomicBool` arrête tous les threads,
+qui sont rejoints (`join`) avant restauration du terminal.
 
 ## Installation
 
@@ -44,4 +54,5 @@ cargo build
 cargo run --release
 ```
 
-L'animation se rafraîchit toutes les 150 ms. `Ctrl+C` pour quitter.
+Chaque robot avance d'un pas toutes les 200 ms ; l'UI se rafraîchit toutes les 50 ms.
+**Toute touche** quitte proprement la simulation.

@@ -42,8 +42,6 @@ pub struct Tile {
     pub resource: Option<Resource>,
 }
 
-/// Messages échangés vers la base (réutilisables en Phase 5 avec des canaux).
-#[allow(dead_code)]
 #[derive(Clone, Debug)]
 pub enum Message {
     ResourceDiscovered {
@@ -60,6 +58,9 @@ pub enum Message {
         kind: ResourceKind,
         remaining: u32,
     },
+    ResourceDeposited {
+        kind: ResourceKind,
+    },
 }
 
 #[derive(Clone, Debug)]
@@ -72,7 +73,6 @@ pub struct Base {
 }
 
 impl Base {
-    /// Applique les messages entrants et renvoie des lignes de journal (nouvelles entrées globales).
     pub fn process_incoming(&mut self, inbox: &mut Vec<Message>) -> Vec<String> {
         let mut logs = Vec::new();
         for msg in inbox.drain(..) {
@@ -99,16 +99,108 @@ impl Base {
                     }
                 }
                 Message::ResourcePicked {
+                    robot_id,
                     position,
+                    kind,
                     remaining,
-                    ..
                 } => {
                     if remaining == 0 {
                         self.known_resources.remove(&position);
+                        logs.push(format!(
+                            "[depleted] {:?} at ({},{}) — REMOVED",
+                            kind, position.x, position.y
+                        ));
+                    } else {
+                        logs.push(format!(
+                            "[pick] robot #{} took 1 {:?} at ({},{}) — {} left",
+                            robot_id, kind, position.x, position.y, remaining
+                        ));
                     }
+                }
+                Message::ResourceDeposited { kind } => {
+                    let total = match kind {
+                        ResourceKind::Energy => {
+                            self.stored_energy += 1;
+                            self.stored_energy
+                        }
+                        ResourceKind::Crystal => {
+                            self.stored_crystals += 1;
+                            self.stored_crystals
+                        }
+                    };
+                    logs.push(format!("[deposit] {:?} → base (total: {})", kind, total));
                 }
             }
         }
         logs
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn empty_base() -> Base {
+        Base {
+            position: Position { x: 0, y: 0 },
+            stored_energy: 0,
+            stored_crystals: 0,
+            known_resources: HashMap::new(),
+            known_obstacles: HashSet::new(),
+        }
+    }
+
+    #[test]
+    fn resource_discovered_is_deduplicated() {
+        let mut base = empty_base();
+        let pos = Position { x: 3, y: 4 };
+        let make = || Message::ResourceDiscovered {
+            position: pos,
+            kind: ResourceKind::Energy,
+            quantity: 100,
+        };
+
+        let logs_first = base.process_incoming(&mut vec![make()]);
+        let logs_second = base.process_incoming(&mut vec![make()]);
+
+        assert_eq!(base.known_resources.len(), 1);
+        assert_eq!(logs_first.len(), 1, "première découverte = un log global");
+        assert!(logs_second.is_empty(), "doublon = aucun nouveau log");
+    }
+
+    #[test]
+    fn depleted_resource_is_removed_from_global_knowledge() {
+        let mut base = empty_base();
+        let pos = Position { x: 1, y: 1 };
+        base.known_resources.insert(pos, ResourceKind::Crystal);
+
+        base.process_incoming(&mut vec![Message::ResourcePicked {
+            robot_id: 1,
+            position: pos,
+            kind: ResourceKind::Crystal,
+            remaining: 0,
+        }]);
+
+        assert!(!base.known_resources.contains_key(&pos));
+    }
+
+    #[test]
+    fn deposit_increments_stored_counts() {
+        let mut base = empty_base();
+
+        base.process_incoming(&mut vec![
+            Message::ResourceDeposited {
+                kind: ResourceKind::Energy,
+            },
+            Message::ResourceDeposited {
+                kind: ResourceKind::Energy,
+            },
+            Message::ResourceDeposited {
+                kind: ResourceKind::Crystal,
+            },
+        ]);
+
+        assert_eq!(base.stored_energy, 2);
+        assert_eq!(base.stored_crystals, 1);
     }
 }
