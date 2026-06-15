@@ -86,10 +86,10 @@
 
 ## 🎨 Phase 4 — Ratatui (UI)
 
-- [ ] Remplacer print() par Ratatui
-- [ ] Affichage couleurs (O, E, C, #, x, o)
-- [ ] UI avec compteur ressources
-- [ ] Input clavier (quit)
+- [x] Remplacer print() par Ratatui
+- [x] Affichage couleurs (O, E, C, #, x, o)
+- [x] UI avec compteur ressources
+- [x] Input clavier (quit)
 
 ---
 
