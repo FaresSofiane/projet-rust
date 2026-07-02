@@ -56,3 +56,37 @@ cargo run --release
 
 Chaque robot avance d'un pas toutes les 200 ms ; l'UI se rafraîchit toutes les 50 ms.
 **Toute touche** quitte proprement la simulation.
+
+## Structure du projet
+
+```
+src/
+├── main.rs         # Point d'entrée : câblage threads + canal + UI
+├── config.rs       # Constantes de la simulation (carte, robots, timings)
+├── logging.rs      # Initialisation de tracing (fichier logs/simulation.log)
+├── model.rs        # Types du domaine : Robot, Base, Resource, Message…
+├── map.rs          # Carte : génération Perlin (obstacles) et ressources
+├── pathfinding.rs  # BFS, déplacement aléatoire, ciblage de ressources
+├── robot.rs        # Boucle de thread et comportements scout / collecteur
+├── world.rs        # État partagé (Arc<Mutex<World>>) et spawn des robots
+└── ui.rs           # Rendu Ratatui et boucle d'événements terminal
+```
+
+## Logs
+
+Les événements de la simulation (découvertes, collectes, dépôts) sont écrits via
+[`tracing`](https://docs.rs/tracing) dans `logs/simulation.log` — le terminal reste
+réservé à l'interface Ratatui.
+
+```bash
+tail -f logs/simulation.log
+```
+
+## Tests
+
+```bash
+cargo test
+```
+
+Les comportements aléatoires sont testés de façon déterministe grâce à un
+générateur seedé (`StdRng::seed_from_u64`), injecté en paramètre des fonctions.
