@@ -25,3 +25,5 @@ Thumbs.db
 ehthumbs.db
 
 .claude
+# Runtime logs
+logs/

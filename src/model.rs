@@ -24,6 +24,20 @@ pub struct Robot {
     pub local_obstacles: HashSet<Position>,
 }
 
+impl Robot {
+    pub fn new(id: u32, robot_type: RobotType, position: Position) -> Self {
+        Self {
+            id,
+            position,
+            robot_type,
+            target: None,
+            carrying: None,
+            local_resources: HashSet::new(),
+            local_obstacles: HashSet::new(),
+        }
+    }
+}
+
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum ResourceKind {
     Energy,
@@ -36,7 +50,7 @@ pub struct Resource {
     pub quantity: u32,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct Tile {
     pub obstacle: bool,
     pub resource: Option<Resource>,
@@ -73,9 +87,22 @@ pub struct Base {
 }
 
 impl Base {
-    pub fn process_incoming(&mut self, inbox: &mut Vec<Message>) -> Vec<String> {
+    pub fn new(position: Position) -> Self {
+        Self {
+            position,
+            stored_energy: 0,
+            stored_crystals: 0,
+            known_resources: HashMap::new(),
+            known_obstacles: HashSet::new(),
+        }
+    }
+
+    pub fn process_incoming<I>(&mut self, inbox: I) -> Vec<String>
+    where
+        I: IntoIterator<Item = Message>,
+    {
         let mut logs = Vec::new();
-        for msg in inbox.drain(..) {
+        for msg in inbox {
             match msg {
                 Message::ResourceDiscovered {
                     position,
@@ -140,55 +167,90 @@ impl Base {
 mod tests {
     use super::*;
 
-    fn empty_base() -> Base {
-        Base {
-            position: Position { x: 0, y: 0 },
-            stored_energy: 0,
-            stored_crystals: 0,
-            known_resources: HashMap::new(),
-            known_obstacles: HashSet::new(),
+    const ORIGIN: Position = Position { x: 0, y: 0 };
+
+    fn discovery_at(position: Position) -> Message {
+        Message::ResourceDiscovered {
+            position,
+            kind: ResourceKind::Energy,
+            quantity: 100,
         }
     }
 
     #[test]
-    fn resource_discovered_is_deduplicated() {
-        let mut base = empty_base();
+    fn resource_discovered_is_registered_once() {
+        let mut base = Base::new(ORIGIN);
         let pos = Position { x: 3, y: 4 };
-        let make = || Message::ResourceDiscovered {
-            position: pos,
-            kind: ResourceKind::Energy,
-            quantity: 100,
-        };
 
-        let logs_first = base.process_incoming(&mut vec![make()]);
-        let logs_second = base.process_incoming(&mut vec![make()]);
+        let first_logs = base.process_incoming([discovery_at(pos)]);
+        let second_logs = base.process_incoming([discovery_at(pos)]);
 
         assert_eq!(base.known_resources.len(), 1);
-        assert_eq!(logs_first.len(), 1, "première découverte = un log global");
-        assert!(logs_second.is_empty(), "doublon = aucun nouveau log");
+        assert_eq!(first_logs.len(), 1, "first discovery must be logged");
+        assert!(second_logs.is_empty(), "duplicate must not be logged again");
     }
 
     #[test]
-    fn depleted_resource_is_removed_from_global_knowledge() {
-        let mut base = empty_base();
+    fn obstacle_discovered_is_registered_once() {
+        let mut base = Base::new(ORIGIN);
+        let pos = Position { x: 5, y: 2 };
+        let obstacle = Message::ObstacleDiscovered { position: pos };
+
+        let first_logs = base.process_incoming([obstacle.clone()]);
+        let second_logs = base.process_incoming([obstacle]);
+
+        assert_eq!(base.known_obstacles.len(), 1);
+        assert_eq!(first_logs.len(), 1, "first discovery must be logged");
+        assert!(second_logs.is_empty(), "duplicate must not be logged again");
+    }
+
+    #[test]
+    fn depleted_resource_is_deleted_from_known_resources() {
+        let mut base = Base::new(ORIGIN);
         let pos = Position { x: 1, y: 1 };
         base.known_resources.insert(pos, ResourceKind::Crystal);
 
-        base.process_incoming(&mut vec![Message::ResourcePicked {
+        let logs = base.process_incoming([Message::ResourcePicked {
             robot_id: 1,
             position: pos,
             kind: ResourceKind::Crystal,
             remaining: 0,
         }]);
 
-        assert!(!base.known_resources.contains_key(&pos));
+        assert!(
+            !base.known_resources.contains_key(&pos),
+            "a depleted resource must be deleted from the shared knowledge"
+        );
+        assert_eq!(logs.len(), 1);
+        assert!(logs[0].starts_with("[depleted]"));
+    }
+
+    #[test]
+    fn picked_resource_with_units_left_stays_known() {
+        let mut base = Base::new(ORIGIN);
+        let pos = Position { x: 2, y: 3 };
+        base.known_resources.insert(pos, ResourceKind::Energy);
+
+        let logs = base.process_incoming([Message::ResourcePicked {
+            robot_id: 4,
+            position: pos,
+            kind: ResourceKind::Energy,
+            remaining: 9,
+        }]);
+
+        assert!(
+            base.known_resources.contains_key(&pos),
+            "a partially consumed resource must stay known"
+        );
+        assert_eq!(logs.len(), 1);
+        assert!(logs[0].starts_with("[pick]"));
     }
 
     #[test]
     fn deposit_increments_stored_counts() {
-        let mut base = empty_base();
+        let mut base = Base::new(ORIGIN);
 
-        base.process_incoming(&mut vec![
+        base.process_incoming([
             Message::ResourceDeposited {
                 kind: ResourceKind::Energy,
             },
